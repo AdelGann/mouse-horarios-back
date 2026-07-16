@@ -1,7 +1,4 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
+// schema.prisma
 
 generator client {
   provider = "prisma-client"
@@ -12,54 +9,183 @@ datasource db {
   provider = "postgresql"
 }
 
+enum Role {
+  USER
+  ADMIN
+}
+
 model User {
-  id        String             @unique @default(uuid())
-  user      String             @unique()
-  email     String
-  password  String
-  fullname  String
-  img_url   String
+  id       String  @id @default(uuid())
+  username String  @unique
+  email    String  @unique
+  password String
+  fullname String?
+  img_url  String?
+  semester Int?
+  role     Role    @default(USER)
+
   schedules PersonalSchedule[]
-  deanery   Deanery            @relation(fields: [deaneryId], references: [id])
+
   deaneryId String
+  deanery   Deanery @relation(fields: [deaneryId], references: [id])
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
 }
 
 model PersonalSchedule {
-  id     String  @unique @default(uuid())
-  user   User?   @relation(fields: [userId], references: [id])
-  userId String?
+  id     String  @id @default(uuid())
   name   String
+  pdfUrl String?
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  subjects Subject[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+}
+
+model AcademicTerm {
+  id        String    @id @default(uuid())
+  name      String    @unique
+  startDate DateTime?
+  endDate   DateTime?
+
+  schedules Schedule[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
 }
 
 model Schedule {
-  id String @unique @default(uuid())
+  id          String  @id @default(uuid())
+  semester    Int
+  globalQuota Int?
+  pdfUrl      String?
+  isPublished Boolean @default(false)
+
+  termId String
+  term   AcademicTerm @relation(fields: [termId], references: [id])
+
+  sectionId String
+  section   Section @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+
+  subjects Subject[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+}
+
+model Course {
+  id       String @id @default(uuid())
+  name     String
+  semester Int
+
+  careerId String
+  career   Career @relation(fields: [careerId], references: [id])
+
+  subjects Subject[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
 }
 
 model Subject {
-  id        String   @unique @default(uuid())
-  name      String
-  days      String[]
-  timetable String[]
-  sectionId String
-  section   Section  @relation(fields: [sectionId], references: [id])
+  id String @id @default(uuid())
+
+  scheduleId String
+  schedule   Schedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+
   teacherId String?
   teacher   Teacher? @relation(fields: [teacherId], references: [id])
+
+  courseId String
+  course   Course @relation(fields: [courseId], references: [id])
+
+  personalSchedules PersonalSchedule[]
+  slots             ClassSlot[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+}
+
+model Room {
+  id       String @id @default(uuid())
+  name     String
+  capacity Int?
+
+  slots ClassSlot[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+}
+
+model ClassSlot {
+  id        String @id @default(uuid())
+  dayOfWeek Int
+  startTime String
+  endTime   String
+
+  subjectId String
+  subject   Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  roomId String?
+  room   Room?   @relation(fields: [roomId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Teacher {
-  id       String    @unique @default(uuid())
+  id       String    @id @default(uuid())
   name     String
   subjects Subject[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
 }
 
 model Section {
-  id       String    @unique @default(uuid())
-  name     String
-  subjects Subject[]
+  id        String     @id @default(uuid())
+  name      String
+  schedules Schedule[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
 }
 
 model Deanery {
-  id    String @unique @default(uuid())
-  name  String
-  users User[]
+  id      String   @id @default(uuid())
+  name    String
+  users   User[]
+  careers Career[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+}
+
+model Career {
+  id   String @id @default(uuid())
+  name String
+
+  deaneryId String
+  deanery   Deanery @relation(fields: [deaneryId], references: [id])
+
+  courses Course[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
 }
