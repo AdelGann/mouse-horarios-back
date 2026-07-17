@@ -3,6 +3,7 @@ import { FileInterceptor } from "@nestjs/platform-express"
 import { diskStorage } from "multer"
 import { extname, join } from "path"
 import * as fs from "fs"
+import * as bcrypt from "bcryptjs"
 import { PrismaService } from "../prisma/prisma.service"
 import { AuditService } from "../audit/audit.service"
 import { AuthGuard } from "../auth/auth.guard"
@@ -127,5 +128,42 @@ export class UsersController {
   @Get("profile-image/:filename")
   serveImage(@Param("filename") filename: string, @Res() res: any) {
     return res.sendFile(filename, { root: join(process.cwd(), uploadDir) })
+  }
+
+  // CHANGE PASSWORD (Logged User Only)
+  @Put("change-password")
+  @UseGuards(AuthGuard)
+  async changePassword(@Req() req: any, @Body() body: any) {
+    const user = req.user
+    const { currentPassword, newPassword } = body
+
+    if (!currentPassword || !newPassword) {
+      throw new BadRequestException("Contraseña actual y nueva son requeridas")
+    }
+
+    const dbUser = await this.prisma.user.findUnique({ where: { id: user.id } })
+    if (!dbUser) {
+      throw new BadRequestException("Usuario no encontrado")
+    }
+
+    const matches = await bcrypt.compare(currentPassword, dbUser.password)
+    if (!matches) {
+      throw new BadRequestException("La contraseña actual es incorrecta")
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 10)
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { password: passwordHash }
+    })
+
+    await this.auditService.logAction(
+      user.id,
+      user.username,
+      "CHANGE_PASSWORD",
+      `Contraseña cambiada para el usuario: ${user.username}`
+    )
+
+    return { success: true, message: "Contraseña cambiada exitosamente" }
   }
 }
