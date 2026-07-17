@@ -48,6 +48,9 @@ export class ScheduleController {
       throw new BadRequestException("Campos incompletos")
     }
 
+    // Run slots validations (times, semester, internal conflicts, room taken conflict)
+    await this.validateScheduleSlots(termId, parseInt(semester), sectionId, subjects)
+
     // Check if a schedule already exists for this combination
     const existing = await this.prisma.schedule.findFirst({
       where: { termId, sectionId, semester: parseInt(semester) },
@@ -92,6 +95,9 @@ export class ScheduleController {
     if (!termId || !sectionId || !semester || !subjects) {
       throw new BadRequestException("Campos incompletos")
     }
+
+    // Run slots validations (times, semester, internal conflicts, room taken conflict)
+    await this.validateScheduleSlots(termId, parseInt(semester), sectionId, subjects, id)
 
     const schedule = await this.prisma.schedule.findUnique({ where: { id } })
     if (!schedule) throw new BadRequestException("Horario no encontrado")
@@ -357,5 +363,102 @@ export class ScheduleController {
       where: { id, userId: user.id }
     })
     return { success: true }
+  }
+
+  private async validateScheduleSlots(termId: string, semester: number, sectionId: string, subjects: any[], excludeScheduleId?: string) {
+    if (!termId) throw new BadRequestException("El lapso académico es requerido");
+    if (!sectionId || sectionId.trim() === "") throw new BadRequestException("La sección es requerida");
+    if (!semester || semester < 1 || semester > 10) throw new BadRequestException("El semestre debe ser un número válido entre 1 y 10");
+
+    const localSlots: { day: number, start: number, end: number, roomId: string, courseName: string }[] = [];
+
+    for (const sub of subjects) {
+      const course = await this.prisma.course.findUnique({ where: { id: sub.courseId } });
+      const courseName = course?.name || "Materia";
+
+      if (!sub.slots || !Array.isArray(sub.slots) || sub.slots.length === 0) {
+        throw new BadRequestException(`La materia ${courseName} debe tener al menos un bloque de horario.`);
+      }
+
+      for (const slot of sub.slots) {
+        if (!slot.startTime || !slot.endTime) {
+          throw new BadRequestException("La hora de inicio y fin son requeridas para todos los bloques.");
+        }
+
+        const [sH, sM] = slot.startTime.split(":").map(Number);
+        const [eH, eM] = slot.endTime.split(":").map(Number);
+        const start = sH * 60 + sM;
+        const end = eH * 60 + eM;
+
+        if (start < 8 * 60 || end > 16 * 60) {
+          throw new BadRequestException(
+            `El horario para la materia ${courseName} (${slot.startTime} - ${slot.endTime}) está fuera del rango permitido (08:00 AM a 04:00 PM).`
+          );
+        }
+
+        if (start >= end) {
+          throw new BadRequestException(
+            `Horario inválido para ${courseName}: La hora de inicio (${slot.startTime}) debe ser anterior a la hora de fin (${slot.endTime}).`
+          );
+        }
+
+        const dayOfWeek = parseInt(slot.dayOfWeek);
+        for (const existing of localSlots) {
+          if (existing.day === dayOfWeek) {
+            if (start < existing.end && existing.start < end) {
+              throw new ConflictException(
+                `Conflicto de horario interno: Hay un solapamiento de horas el mismo día para ${courseName} y ${existing.courseName}.`
+              );
+            }
+          }
+        }
+
+        localSlots.push({ day: dayOfWeek, start, end, roomId: slot.roomId || "", courseName });
+      }
+    }
+
+    const databaseSchedules = await this.prisma.schedule.findMany({
+      where: {
+        termId,
+        NOT: excludeScheduleId ? { id: excludeScheduleId } : undefined
+      },
+      include: {
+        section: true,
+        subjects: {
+          include: {
+            course: true,
+            slots: {
+              include: {
+                room: true
+              }
+            }
+          }
+        }
+      }
+    });
+
+    for (const local of localSlots) {
+      if (!local.roomId) continue;
+
+      for (const dbSched of databaseSchedules) {
+        for (const dbSub of dbSched.subjects) {
+          for (const dbSlot of dbSub.slots) {
+            if (dbSlot.roomId === local.roomId && dbSlot.dayOfWeek === local.day) {
+              const [dbHStart, dbMStart] = dbSlot.startTime.split(":").map(Number);
+              const [dbHEnd, dbMEnd] = dbSlot.endTime.split(":").map(Number);
+              const dbStart = dbHStart * 60 + dbMStart;
+              const dbEnd = dbHEnd * 60 + dbMEnd;
+
+              if (local.start < dbEnd && dbStart < local.end) {
+                const roomName = dbSlot.room?.name || "el aula seleccionada";
+                throw new ConflictException(
+                  `Aula Tomada: El aula "${roomName}" ya está ocupada el día de la semana correspondiente en el horario de ${dbSlot.startTime} a ${dbSlot.endTime} por la materia "${dbSub.course?.name || "otra materia"}" de la sección "${dbSched.section?.name || "otra sección"}" (Semestre ${dbSched.semester}).`
+                );
+              }
+            }
+          }
+        }
+      }
+    }
   }
 }
