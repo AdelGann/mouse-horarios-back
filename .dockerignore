@@ -1,0 +1,15 @@
+node_modules
+dist
+.git
+.gitignore
+*.md
+.env
+.env.*
+!.env.example
+coverage
+test
+.eslintrc*
+*.log
+npm-debug.log*
+pnpm-debug.log*
+uploads
