@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Delete, Body, Param, Req, UseGuards, Query, BadRequestException } from "@nestjs/common"
+import { Controller, Get, Post, Put, Delete, Body, Param, Req, UseGuards, Query, BadRequestException, ConflictException } from "@nestjs/common"
 import { PrismaService } from "../prisma/prisma.service"
 import { AuditService } from "../audit/audit.service"
 import { AuthGuard } from "../auth/auth.guard"
@@ -48,29 +48,98 @@ export class ScheduleController {
       throw new BadRequestException("Campos incompletos")
     }
 
-    let schedule = await this.prisma.schedule.findFirst({
-      where: { termId, sectionId, semester: parseInt(semester) }
+    // Check if a schedule already exists for this combination
+    const existing = await this.prisma.schedule.findFirst({
+      where: { termId, sectionId, semester: parseInt(semester) },
+      include: { section: true, term: true }
     })
 
-    if (schedule) {
-      await this.prisma.subject.deleteMany({
-        where: { scheduleId: schedule.id }
-      })
-    } else {
-      schedule = await this.prisma.schedule.create({
-        data: {
-          termId,
-          sectionId,
-          semester: parseInt(semester),
-          isPublished: true
-        }
-      })
+    if (existing) {
+      throw new ConflictException(
+        `Ya existe un horario para la Sección "${existing.section?.name || sectionId}" en el Semestre ${semester} dentro del lapso "${existing.term?.name || termId}". Use la opción de editar para modificarlo.`
+      )
     }
 
+    const schedule = await this.prisma.schedule.create({
+      data: {
+        termId,
+        sectionId,
+        semester: parseInt(semester),
+        isPublished: true
+      }
+    })
+
+    await this.saveSubjects(schedule.id, subjects)
+
+    const secObj = await this.prisma.section.findUnique({ where: { id: sectionId } })
+    await this.auditService.logAction(
+      admin.id,
+      admin.username,
+      "CREATE_SCHEDULE",
+      `Horario creado para Sección: ${secObj?.name || "N/A"}, Semestre: ${semester}`
+    )
+
+    return { success: true, scheduleId: schedule.id }
+  }
+
+  // UPDATE GLOBAL SCHEDULE (Admin Only)
+  @Put("global/:id")
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  async updateGlobalSchedule(@Req() req: any, @Param("id") id: string, @Body() body: any) {
+    const admin = req.user
+    const { termId, sectionId, semester, subjects } = body
+    if (!termId || !sectionId || !semester || !subjects) {
+      throw new BadRequestException("Campos incompletos")
+    }
+
+    const schedule = await this.prisma.schedule.findUnique({ where: { id } })
+    if (!schedule) throw new BadRequestException("Horario no encontrado")
+
+    // Check conflict with OTHER schedules (not itself)
+    const conflict = await this.prisma.schedule.findFirst({
+      where: {
+        termId,
+        sectionId,
+        semester: parseInt(semester),
+        NOT: { id }
+      },
+      include: { section: true, term: true }
+    })
+
+    if (conflict) {
+      throw new ConflictException(
+        `Ya existe un horario para la Sección "${conflict.section?.name || sectionId}" en el Semestre ${semester} dentro del lapso "${conflict.term?.name || termId}".`
+      )
+    }
+
+    // Update schedule metadata
+    await this.prisma.schedule.update({
+      where: { id },
+      data: { termId, sectionId, semester: parseInt(semester) }
+    })
+
+    // Replace subjects
+    await this.prisma.subject.deleteMany({ where: { scheduleId: id } })
+    await this.saveSubjects(id, subjects)
+
+    const secObj = await this.prisma.section.findUnique({ where: { id: sectionId } })
+    await this.auditService.logAction(
+      admin.id,
+      admin.username,
+      "UPDATE_SCHEDULE",
+      `Horario actualizado para Sección: ${secObj?.name || "N/A"}, Semestre: ${semester}`
+    )
+
+    return { success: true, scheduleId: id }
+  }
+
+  // Helper: save subjects + slots for a schedule
+  private async saveSubjects(scheduleId: string, subjects: any[]) {
     for (const sub of subjects) {
       const createdSubject = await this.prisma.subject.create({
         data: {
-          scheduleId: schedule.id,
+          scheduleId,
           courseId: sub.courseId,
           teacherId: sub.teacherId || null,
         }
@@ -90,16 +159,6 @@ export class ScheduleController {
         }
       }
     }
-
-    const secObj = await this.prisma.section.findUnique({ where: { id: sectionId } })
-    await this.auditService.logAction(
-      admin.id,
-      admin.username,
-      "LOAD_SCHEDULE",
-      `Horario cargado para Sección: ${secObj?.name || "N/A"}, Semestre: ${semester}`
-    )
-
-    return { success: true, scheduleId: schedule.id }
   }
 
   // GET GLOBAL SCHEDULES FOR PLANNER (Public)
@@ -240,7 +299,9 @@ export class ScheduleController {
         term: true,
         subjects: {
           include: {
-            course: true,
+            course: {
+              include: { career: true }
+            },
             teacher: true,
             slots: {
               include: { room: true }
