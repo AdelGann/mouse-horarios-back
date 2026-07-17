@@ -93,6 +93,24 @@ Nest is an MIT-licensed open source project. It can grow thanks to the sponsors 
 - Website - [https://nestjs.com](https://nestjs.com/)
 - Twitter - [@nestframework](https://twitter.com/nestframework)
 
+## Seed Credentials
+
+El script de sembrado inicial crea las siguientes cuentas de prueba:
+
+* **Administrador (ADMIN)**:
+  * **Usuario**: `admin`
+  * **Correo**: `admin@ucla.edu.ve`
+  * **Contraseña**: `admin123`
+* **Estudiante regular (USER)**:
+  * **Usuario**: `estudiante`
+  * **Correo**: `estudiante@ucla.edu.ve`
+  * **Contraseña**: `admin123`
+
+## Swagger Documentation
+
+La documentación interactiva de la API REST está disponible una vez iniciado el servidor en:
+* URL: [http://localhost:3001/api-docs](http://localhost:3001/api-docs)
+
 ## License
 
 Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
