@@ -219,6 +219,11 @@ export class ScheduleController {
           include: {
             course: true,
             teacher: true,
+            schedule: {
+              include: {
+                section: true
+              }
+            },
             slots: {
               include: {
                 room: true
@@ -256,6 +261,11 @@ export class ScheduleController {
             include: {
               course: true,
               teacher: true,
+              schedule: {
+                include: {
+                  section: true
+                }
+              },
               slots: {
                 include: { room: true }
               }
@@ -277,6 +287,11 @@ export class ScheduleController {
             include: {
               course: true,
               teacher: true,
+              schedule: {
+                include: {
+                  section: true
+                }
+              },
               slots: {
                 include: { room: true }
               }
