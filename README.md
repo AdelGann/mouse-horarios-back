@@ -114,3 +114,9 @@ La documentación interactiva de la API REST está disponible una vez iniciado e
 ## License
 
 Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+
+## Créditos y Reconocimiento
+
+> 🌟 **Todo el mérito y la autoría de este proyecto es 100% tuyo.** 
+> La concepción, arquitectura de negocio y dirección general de MiHorario son totalmente mérito tuyo.
+
