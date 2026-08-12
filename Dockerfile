@@ -7,8 +7,11 @@ WORKDIR /app
 RUN corepack enable && corepack prepare pnpm@latest --activate
 
 # Install dependencies
-COPY package.json pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile --config.ignore-scripts=false
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+
+# non-interactive node_mode 
+ENV CI=True
+RUN pnpm install --frozen-lockfile
 
 # Copy source and build
 COPY . .
